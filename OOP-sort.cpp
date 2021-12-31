@@ -4,8 +4,7 @@ class array
 {
 private:
     /* data */
-    int n;
-    int i=0;
+    int index = 0;
     int arr[100];
 
 public:
@@ -13,10 +12,9 @@ public:
     ~array();
     void input()
     {
-        std::cout << "Nhap so phan tu cua mang: ";
-        std::cin >> n;
         std::cout << "Nhap mang: ";
-        std::cin >> arr[i];
+        std::cin >> arr[index];
+        index+=1;
         char cond = 'n';
         std::cout << "End ??(y/n): ";
         std::cin >> cond;
@@ -25,10 +23,18 @@ public:
             while (cond == 'n')
             {
                 std::cout << "Nhap mang: ";
-                std::cin >> arr[i];
+                std::cin >> arr[index];
+                index+=1;
                 std::cout << "End ??(y/n): ";
                 std::cin >> cond;
             }
+        }
+    };
+    void output()
+    {
+        for (int i = 0; i < index; i++)
+        {
+            std::cout << arr[i];
         }
     };
 };
@@ -45,5 +51,6 @@ int main()
 {
     array a = array();
     a.input();
+    a.output();
     return 0;
 }
