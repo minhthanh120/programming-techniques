@@ -1,6 +1,10 @@
 version: '3.5'
 
 services:
+  # notebook:
+  #   container_name: jupiter_notebooks
+  #   image: 
+
   postgres:
     container_name: postgres_container
     image: postgres
@@ -11,7 +15,7 @@ services:
     volumes:
        - postgres:/data/postgres
     ports:
-      - "5433:5433"
+      - "5432:5432"
     networks:
       - postgres
     restart: unless-stopped
