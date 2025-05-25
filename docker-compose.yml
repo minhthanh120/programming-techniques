@@ -1,50 +1,33 @@
-version: '3.5'
-
+version: "3.0"
 services:
-  # notebook:
-  #   container_name: jupiter_notebooks
-  #   image: 
-
-  postgres:
-    container_name: postgres_container
-    image: postgres
+  elasticsearch:
+    container_name: es-container
+    image: docker.elastic.co/elasticsearch/elasticsearch:7.11.0
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
-      PGDATA: /data/postgres
-    volumes:
-       - postgres:/data/postgres
-    ports:
-      - "5432:5432"
+      - xpack.security.enabled=false
+      - "discovery.type=single-node"
     networks:
-      - postgres
-    restart: unless-stopped
-  
-  pgadmin:
-    container_name: pgadmin_container
-    image: dpage/pgadmin4
+      - es-net
+    ports:
+      - 9200:9200
+    volumes:
+      - es-container:/data/elasticsearch
+  kibana:
+    container_name: kb-container
+    image: docker.elastic.co/kibana/kibana:7.11.0
     environment:
-      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL:-pgadmin4@pgadmin.org}
-      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD:-admin}
-      PGADMIN_CONFIG_SERVER_MODE: 'False'
-    volumes:
-       - pgadmin:/var/lib/pgadmin
-
-    ports:
-      - "5050:80"
+      - ELASTICSEARCH_HOSTS=http://es-container:9200
     networks:
-      - postgres
-    restart: unless-stopped
-
+      - es-net
+    depends_on:
+      - elasticsearch
+    ports:
+      - 5601:5601
+    volumes:
+      - kbn-container:/data/kibana
 networks:
-  postgres:
+  es-net:
     driver: bridge
-    ipam:
-      config:
-        - subnet: 192.168.0.0/16
-          gateway: 192.168.0.2
-
 volumes:
-    postgres:
-
-    pgadmin:
+  es-container:
+  kbn-container:

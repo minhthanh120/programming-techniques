@@ -1,0 +1,5 @@
+GET _search
+{
+  "query": {"bool":{"must":[{"nested":{"path":"variants","query":{"terms":{"variants.size":["1L"]}}}},{"nested":{"inner_hits":{"size":100},"path":"variants","query":{"bool":{"must":[{"nested":{"path":"variants.prices.sakaya","query":{"term":{"variants.prices.sakaya.id":{"value":"cldsi63lob7f90b14u8yb3h3a"}}}}},{"query_string":{"fields":["variants.size.keyword"],"query":"(*1L*)"}}]}}}}]}}
+
+}
