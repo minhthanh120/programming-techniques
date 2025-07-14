@@ -1,50 +1,154 @@
-version: '3.5'
-
 services:
-  # notebook:
-  #   container_name: jupiter_notebooks
-  #   image: 
-
-  postgres:
-    container_name: postgres_container
-    image: postgres
+  spark-master:
+    image: bitnami/spark:latest
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
-      PGDATA: /data/postgres
+      - SPARK_MODE=master
+      - SPARK_RPC_AUTHENTICATION_ENABLED=no
+      - SPARK_RPC_ENCRYPTION_ENABLED=no
+      - SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED=no
+      - SPARK_SSL_ENABLED=no
+      - SPARK_USER=spark
+      - PYSPARK_SUBMIT_ARGS=--master local[3] pyspark-shell
+    extra_hosts:
+      - "host.docker.internal:127.0.0.1" #// Linux
+      - "host.docker.internal:host-gateway" #// Access services on the host machine from within the Docker container
+    ports:
+      - '8080:8080'
+      - '7077:7077'
+
+  spark-worker:
+    image: bitnami/spark:latest
+    environment:
+      - SPARK_MODE=worker
+      - SPARK_MASTER_URL=spark://spark-master:7077
+      - SPARK_WORKER_MEMORY=1G
+      - SPARK_WORKER_CORES=2
+      - SPARK_RPC_AUTHENTICATION_ENABLED=no
+      - SPARK_RPC_ENCRYPTION_ENABLED=no
+      - SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED=no
+      - SPARK_SSL_ENABLED=no
+      - SPARK_USER=spark
+      - PYSPARK_SUBMIT_ARGS=--master local[3] pyspark-shell
+    extra_hosts:
+      - "host.docker.internal:127.0.0.1" #// Linux
+      - "host.docker.internal:host-gateway" #// Access services on the host machine from within the Docker container
+    depends_on:
+      - spark-master
+
+  redpanda:
+    image: redpandadata/redpanda:latest
+    command:
+      - redpanda
+      - start
+      - --overprovisioned
+      - --smp 1
+      - --memory 1G
+      - --reserve-memory 0M
+      - --node-id 0
+      - --check=false
+      - --kafka-addr internal://0.0.0.0:9092,external://0.0.0.0:19092
+      - --advertise-kafka-addr internal://redpanda:9092,external://localhost:19092
+    ports:
+      - "9092:9092"
+      - "19092:19092"
+    networks:
+      - kafkanet
+
+#  kafka-console:
+#    image: redpandadata/console:v3.0.0
+#    ports:
+#      - "8080:8080"
+#    environment:
+#      KAFKA_BROKERS: "redpanda:9092"
+#    depends_on:
+#      - redpanda
+#    networks:
+#      - kafkanet
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: kafka-ui
+    ports:
+      - "8080:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: "local-redpanda"
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: "redpanda:9092"
+    depends_on:
+      - redpanda
+    networks:
+      - kafkanet
+
+  jobmanager:
+    build:
+      context: .
+      dockerfile: ./Dockerfile.flink
+    image: pyflink:1.16.0
+    container_name: "flink-jobmanager"
+    pull_policy: never
+    platform: "linux/amd64"
+    hostname: "jobmanager"
+    expose:
+      - "6123"
+    ports:
+      - "8081:8081"
     volumes:
-       - postgres:/data/postgres
+      - ./:/opt/flink/usrlib
+      - ./keys/:/var/private/ssl/
+      - ./src/:/opt/src
+    command: jobmanager
+    extra_hosts:
+      - "host.docker.internal:127.0.0.1" #// Linux
+      - "host.docker.internal:host-gateway" #// Access services on the host machine from within the Docker container
+    environment:
+      - POSTGRES_URL=${POSTGRES_URL:-jdbc:postgresql://host.docker.internal:5432/postgres}
+      - POSTGRES_USER=${POSTGRES_USER:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
+      - POSTGRES_DB=${POSTGRES_DB:-postgres}
+      - |
+        FLINK_PROPERTIES=
+        jobmanager.rpc.address: jobmanager
+    networks:
+      - kafkanet
+  # Flink task manager
+  taskmanager:
+    image: pyflink:1.16.0
+    container_name: "flink-taskmanager"
+    pull_policy: never
+    platform: "linux/amd64"
+    expose:
+      - "6121"
+      - "6122"
+    volumes:
+      - ./:/opt/flink/usrlib
+      - ./src/:/opt/src
+    depends_on:
+      - jobmanager
+    command: taskmanager --taskmanager.registration.timeout 5 min
+    extra_hosts:
+      - "host.docker.internal:127.0.0.1" #// Linux
+      - "host.docker.internal:host-gateway" #// Access services on the host machine from within the Docker container
+    environment:
+      - |
+        FLINK_PROPERTIES=
+        jobmanager.rpc.address: jobmanager
+        taskmanager.numberOfTaskSlots: 15
+        parallelism.default: 3
+    networks:
+      - kafkanet
+  postgres:
+    image: postgres:14
+    restart: on-failure
+    container_name: "postgres"
+    environment:
+      - POSTGRES_DB=postgres
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
     ports:
       - "5432:5432"
+    extra_hosts:
+     - "host.docker.internal:127.0.0.1" #// Linux
+     - "host.docker.internal:host-gateway" #// Access services on the host machine from within the Docker container
     networks:
-      - postgres
-    restart: unless-stopped
-  
-  pgadmin:
-    container_name: pgadmin_container
-    image: dpage/pgadmin4
-    environment:
-      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL:-pgadmin4@pgadmin.org}
-      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD:-admin}
-      PGADMIN_CONFIG_SERVER_MODE: 'False'
-    volumes:
-       - pgadmin:/var/lib/pgadmin
-
-    ports:
-      - "5050:80"
-    networks:
-      - postgres
-    restart: unless-stopped
-
+      - kafkanet
 networks:
-  postgres:
-    driver: bridge
-    ipam:
-      config:
-        - subnet: 192.168.0.0/16
-          gateway: 192.168.0.2
-
-volumes:
-    postgres:
-
-    pgadmin:
+  kafkanet:
