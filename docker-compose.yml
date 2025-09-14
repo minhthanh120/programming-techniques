@@ -1,154 +1,100 @@
 services:
   spark-master:
-    image: bitnami/spark:latest
-    environment:
-      - SPARK_MODE=master
-      - SPARK_RPC_AUTHENTICATION_ENABLED=no
-      - SPARK_RPC_ENCRYPTION_ENABLED=no
-      - SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED=no
-      - SPARK_SSL_ENABLED=no
-      - SPARK_USER=spark
-      - PYSPARK_SUBMIT_ARGS=--master local[3] pyspark-shell
-    extra_hosts:
-      - "host.docker.internal:127.0.0.1" #// Linux
-      - "host.docker.internal:host-gateway" #// Access services on the host machine from within the Docker container
+    container_name: spark-master
+    build: .
+    image: spark-image
+    entrypoint: ['./entrypoint.sh', 'master']
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8080" ]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+    volumes:
+      - ./scripts:/opt/spark/scripts
+      - ./data:/opt/spark/data
+      - ./spark-logs:/opt/spark/spark-events
+      - ./warehouse:/opt/spark/warehouse
+    env_file:
+      - .env.spark
     ports:
-      - '8080:8080'
-      - '7077:7077'
+      - '8080:8080' # Spark master Web UI
+      - '7077:7077' # For spark-node-to-spark-node queries
+      - '4040:4040' # Spark worker data
+      - '8889:8889' # Optionaly - Jupyter web UI
 
-  spark-worker:
-    image: bitnami/spark:latest
-    environment:
-      - SPARK_MODE=worker
-      - SPARK_MASTER_URL=spark://spark-master:7077
-      - SPARK_WORKER_MEMORY=1G
-      - SPARK_WORKER_CORES=2
-      - SPARK_RPC_AUTHENTICATION_ENABLED=no
-      - SPARK_RPC_ENCRYPTION_ENABLED=no
-      - SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED=no
-      - SPARK_SSL_ENABLED=no
-      - SPARK_USER=spark
-      - PYSPARK_SUBMIT_ARGS=--master local[3] pyspark-shell
-    extra_hosts:
-      - "host.docker.internal:127.0.0.1" #// Linux
-      - "host.docker.internal:host-gateway" #// Access services on the host machine from within the Docker container
+  spark-history-server:
+    container_name: spark-history
+    image: spark-image
+    entrypoint: ['./entrypoint.sh', 'history']
     depends_on:
       - spark-master
-
-  redpanda:
-    image: redpandadata/redpanda:latest
-    command:
-      - redpanda
-      - start
-      - --overprovisioned
-      - --smp 1
-      - --memory 1G
-      - --reserve-memory 0M
-      - --node-id 0
-      - --check=false
-      - --kafka-addr internal://0.0.0.0:9092,external://0.0.0.0:19092
-      - --advertise-kafka-addr internal://redpanda:9092,external://localhost:19092
+    env_file:
+      - .env.spark
+    volumes:
+      - ./scripts:/opt/spark/scripts
+      - ./data:/opt/spark/data
+      - ./spark-logs:/opt/spark/spark-events
+      - ./warehouse:/opt/spark/warehouse
     ports:
-      - "9092:9092"
-      - "19092:19092"
-    networks:
-      - kafkanet
+      - '18080:18080'
 
-#  kafka-console:
-#    image: redpandadata/console:v3.0.0
+  spark-worker:
+    container_name: spark-worker
+    image: spark-image
+    entrypoint: ['./entrypoint.sh', 'worker']
+    depends_on:
+      - spark-master
+    env_file:
+      - .env.spark
+    volumes:
+      - ./scripts:/opt/spark/scripts
+      - ./data:/opt/spark/data
+      - ./spark-logs:/opt/spark/spark-events
+      - ./warehouse:/opt/spark/warehouse
+#  minio:
+#    image: minio/minio:RELEASE.2025-05-24T17-08-30Z
+#    hostname: minio
+#    container_name: minio
+#    command: server /data --console-address ":9001"
 #    ports:
-#      - "8080:8080"
+#    - "9000:9000"
+#    - "9001:9001"
 #    environment:
-#      KAFKA_BROKERS: "redpanda:9092"
-#    depends_on:
-#      - redpanda
-#    networks:
-#      - kafkanet
+#      MINIO_ROOT_USER: minio
+#      MINIO_ROOT_PASSWORD: dev@1234
+#    volumes:
+#      - minio-data:/data
 
-  kafka-ui:
-    image: provectuslabs/kafka-ui:latest
-    container_name: kafka-ui
+  namenode:
+    image: bde2020/hadoop-namenode:2.0.0-hadoop3.2.1-java8
+    container_name: namenode
+    restart: always
     ports:
-      - "8080:8080"
+      - 9870:9870
+      - 9000:9000
+    volumes:
+      - hadoop_namenode:/hadoop/dfs/name
     environment:
-      KAFKA_CLUSTERS_0_NAME: "local-redpanda"
-      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: "redpanda:9092"
-    depends_on:
-      - redpanda
-    networks:
-      - kafkanet
+      - CLUSTER_NAME=test
+      - CORE_CONF_fs_defaultFS=hdfs://namenode:9000
+    env_file:
+      - ./hadoop.env
 
-  jobmanager:
-    build:
-      context: .
-      dockerfile: ./Dockerfile.flink
-    image: pyflink:1.16.0
-    container_name: "flink-jobmanager"
-    pull_policy: never
-    platform: "linux/amd64"
-    hostname: "jobmanager"
-    expose:
-      - "6123"
-    ports:
-      - "8081:8081"
+  datanode:
+    image: bde2020/hadoop-datanode:2.0.0-hadoop3.2.1-java8
+    container_name: datanode
+    restart: always
     volumes:
-      - ./:/opt/flink/usrlib
-      - ./keys/:/var/private/ssl/
-      - ./src/:/opt/src
-    command: jobmanager
-    extra_hosts:
-      - "host.docker.internal:127.0.0.1" #// Linux
-      - "host.docker.internal:host-gateway" #// Access services on the host machine from within the Docker container
+      - hadoop_datanode:/hadoop/dfs/data
     environment:
-      - POSTGRES_URL=${POSTGRES_URL:-jdbc:postgresql://host.docker.internal:5432/postgres}
-      - POSTGRES_USER=${POSTGRES_USER:-postgres}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
-      - POSTGRES_DB=${POSTGRES_DB:-postgres}
-      - |
-        FLINK_PROPERTIES=
-        jobmanager.rpc.address: jobmanager
-    networks:
-      - kafkanet
-  # Flink task manager
-  taskmanager:
-    image: pyflink:1.16.0
-    container_name: "flink-taskmanager"
-    pull_policy: never
-    platform: "linux/amd64"
-    expose:
-      - "6121"
-      - "6122"
-    volumes:
-      - ./:/opt/flink/usrlib
-      - ./src/:/opt/src
-    depends_on:
-      - jobmanager
-    command: taskmanager --taskmanager.registration.timeout 5 min
-    extra_hosts:
-      - "host.docker.internal:127.0.0.1" #// Linux
-      - "host.docker.internal:host-gateway" #// Access services on the host machine from within the Docker container
-    environment:
-      - |
-        FLINK_PROPERTIES=
-        jobmanager.rpc.address: jobmanager
-        taskmanager.numberOfTaskSlots: 15
-        parallelism.default: 3
-    networks:
-      - kafkanet
-  postgres:
-    image: postgres:14
-    restart: on-failure
-    container_name: "postgres"
-    environment:
-      - POSTGRES_DB=postgres
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=postgres
+      SERVICE_PRECONDITION: "namenode:9870"
+      CORE_CONF_fs_defaultFS: hdfs://namenode:9000
     ports:
-      - "5432:5432"
-    extra_hosts:
-     - "host.docker.internal:127.0.0.1" #// Linux
-     - "host.docker.internal:host-gateway" #// Access services on the host machine from within the Docker container
-    networks:
-      - kafkanet
-networks:
-  kafkanet:
+      - "9864:9864"
+    env_file:
+      - ./hadoop.env
+volumes:
+  spark-logs:
+  minio-data:
+  hadoop_namenode:
+  hadoop_datanode:
