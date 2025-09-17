@@ -1,3 +1,4 @@
 /.idea/*
 mssql-jdbc-7.0.0.jre8.jar
 data/*
+spark-logs/*
