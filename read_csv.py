@@ -16,7 +16,7 @@ def main():
         .config("spark.driver.host", "host.docker.internal")\
         .config("spark.driver.bindAddress", "0.0.0.0")\
         .config("spark.hadoop.fs.s3a.endpoint", "http://minio:9000") \
-        .config("spark.jars.packages", "org.apache.hadoop:hadoop-aws:3.3.4")\
+        .config("spark.jars.packages", "org.apache.hadoop:hadoop-aws:3.4.1") \
         .config("spark.hadoop.fs.s3a.access.key", "minio")\
         .config("spark.hadoop.fs.s3a.secret.key", "dev@1234")\
         .config("spark.hadoop.fs.s3a.fast.upload", True)\
