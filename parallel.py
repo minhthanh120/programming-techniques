@@ -2,9 +2,10 @@ from pyspark.sql import SparkSession
 
 spark = SparkSession.builder \
     .appName("ParallelWordCount") \
-    .master("spark://localhost:7077") \
-    .config("spark.driver.host", "host.docker.internal") \
-    .config("spark.driver.bindAddress", "0.0.0.0") \
+        .master("spark://localhost:7077")\
+        .config("spark.driver.host", "host.docker.internal")\
+        .config("spark.driver.bindAddress", "0.0.0.0")\
+        .config("spark.serializer", "org.apache.spark.serializer.KryoSerializer")\
     .getOrCreate()
 sc = spark.sparkContext # Lấy SparkContext để làm việc với RDD
 

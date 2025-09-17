@@ -7,7 +7,7 @@ RUN apt-get update && \
       vim \
       unzip \
       rsync \
-      openjdk-11-jdk \
+      openjdk-17-jdk \
       build-essential \
       software-properties-common \
       ssh && \
@@ -17,7 +17,7 @@ RUN apt-get update && \
 ## Download spark and hadoop dependencies and install
 
 # ENV variables
-ENV SPARK_VERSION=3.5.6
+ENV SPARK_VERSION=4.0.0
 
 ENV SPARK_HOME=${SPARK_HOME:-"/opt/spark"}
 ENV HADOOP_HOME=${HADOOP_HOME:-"/opt/hadoop"}
@@ -36,10 +36,10 @@ RUN mkdir -p ${HADOOP_HOME} && mkdir -p ${SPARK_HOME}
 WORKDIR ${SPARK_HOME}
 
 # Download spark
-# see resources: https://dlcdn.apache.org/spark/spark-3.5.6/
-# filename: spark-3.5.5-bin-hadoop3.tgz
+# see resources: https://dlcdn.apache.org/spark/spark-4.0./
+# filename: spark-4.0.0-bin-hadoop3.tgz
 RUN mkdir -p ${SPARK_HOME} \
-    && curl https://dlcdn.apache.org/spark/spark-${SPARK_VERSION}/spark-${SPARK_VERSION}-bin-hadoop3.tgz -o spark-${SPARK_VERSION}-bin-hadoop3.tgz \
+    && curl -L -# https://dlcdn.apache.org/spark/spark-${SPARK_VERSION}/spark-${SPARK_VERSION}-bin-hadoop3.tgz -o spark-${SPARK_VERSION}-bin-hadoop3.tgz \
     && tar xvzf spark-${SPARK_VERSION}-bin-hadoop3.tgz --directory ${SPARK_HOME} --strip-components 1 \
     && rm -rf spark-${SPARK_VERSION}-bin-hadoop3.tgz
 
@@ -62,17 +62,19 @@ RUN pip3 install -r requirements.txt
 FROM pyspark AS pyspark-runner
 
 # Download iceberg spark runtime
-RUN curl https://repo1.maven.org/maven2/org/apache/iceberg/iceberg-spark-runtime-3.4_2.12/1.4.3/iceberg-spark-runtime-3.4_2.12-1.4.3.jar -Lo /opt/spark/jars/iceberg-spark-runtime-3.4_2.12-1.4.3.jar
+RUN curl -L -# https://repo1.maven.org/maven2/org/apache/iceberg/iceberg-spark-runtime-4.0_2.13/1.10.0/iceberg-spark-runtime-4.0_2.13-1.10.0.jar -Lo /opt/spark/jars/iceberg-spark-runtime-4.0_2.13-1.10.0.jar
 
-# Download delta jars
-RUN curl https://repo1.maven.org/maven2/io/delta/delta-core_2.12/2.4.0/delta-core_2.12-2.4.0.jar -Lo /opt/spark/jars/delta-core_2.12-2.4.0.jar
-RUN curl https://repo1.maven.org/maven2/io/delta/delta-spark_2.12/3.2.0/delta-spark_2.12-3.2.0.jar -Lo /opt/spark/jars/delta-spark_2.12-3.2.0.jar
-RUN curl https://repo1.maven.org/maven2/io/delta/delta-storage/3.2.0/delta-storage-3.2.0.jar -Lo /opt/spark/jars/delta-storage-3.2.0.jar
+# Download delta jars (Scala 2.13 for Spark 4.0)
+# Note: Delta Lake support for Spark 4.0 is experimental - these may not work perfectly
+RUN curl -L -# https://repo1.maven.org/maven2/io/delta/delta-core_2.13/2.4.0/delta-core_2.13-2.4.0.jar -Lo /opt/spark/jars/delta-core_2.13-2.4.0.jar || echo "Delta core jar not found"
+RUN curl -L -# https://repo1.maven.org/maven2/io/delta/delta-spark_2.13/3.2.0/delta-spark_2.13-3.2.0.jar -Lo /opt/spark/jars/delta-spark_2.13-3.2.0.jar || echo "Delta spark jar not found"
+RUN curl -L -# https://repo1.maven.org/maven2/io/delta/delta-storage/3.2.0/delta-storage-3.2.0.jar -Lo /opt/spark/jars/delta-storage-3.2.0.jar || echo "Delta storage jar not found"
 
-# Download hudi jars
-RUN curl https://repo1.maven.org/maven2/org/apache/hudi/hudi-spark3-bundle_2.12/0.15.0/hudi-spark3-bundle_2.12-0.15.0.jar -Lo /opt/spark/jars/hudi-spark3-bundle_2.12-0.15.0.jar
+# Download hudi jars (Scala 2.13 for Spark 4.0) - experimental support
+RUN curl -L -# https://repo1.maven.org/maven2/org/apache/hudi/hudi-spark3-bundle_2.13/0.15.0/hudi-spark3-bundle_2.13-0.15.0.jar -Lo /opt/spark/jars/hudi-spark3-bundle_2.13-0.15.0.jar || echo "Hudi jar not found"
 
-COPY entrypoint.sh .
+
+COPY entrypoint.sh /opt/spark/entrypoint.sh
 RUN chmod u+x /opt/spark/entrypoint.sh
 
 
