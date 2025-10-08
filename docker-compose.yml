@@ -19,8 +19,8 @@ services:
     ports:
       - '8080:8080' # Spark master Web UI
       - '7077:7077' # For spark-node-to-spark-node queries
-      - '4040:4040' # Spark worker data
       - '8889:8889' # Optionaly - Jupyter web UI
+      - '9999:9999'
 
   spark-history-server:
     container_name: spark-history
@@ -46,6 +46,8 @@ services:
       - spark-master
     env_file:
       - .env.spark
+    ports:
+      - "8081:8081"
     volumes:
       - ./scripts:/opt/spark/scripts
       - ./data:/opt/spark/data
@@ -93,6 +95,34 @@ services:
 #      - "9864:9864"
 #    env_file:
 #      - ./hadoop.env
+  redpanda:
+    image: redpandadata/redpanda:latest
+    container_name: redpanda
+    command:
+      - redpanda
+      - start
+      - --overprovisioned
+      - --smp 1
+      - --memory 1G
+      - --reserve-memory 0M
+      - --node-id 0
+      - --check=false
+      - --kafka-addr internal://0.0.0.0:9092,external://0.0.0.0:9093
+      - --advertise-kafka-addr internal://redpanda:9092,external://localhost:9093
+    ports:
+      - "9092:9092"
+      - "9093:9093"
+    restart: unless-stopped
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: kafka-ui
+    ports:
+      - "8000:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: "local-redpanda"
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: "redpanda:9092"
+    depends_on:
+      - redpanda
 volumes:
   spark-logs:
   minio-data:
