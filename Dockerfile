@@ -38,10 +38,19 @@ WORKDIR ${SPARK_HOME}
 # Download spark
 # see resources: https://dlcdn.apache.org/spark/spark-4.0./
 # filename: spark-4.0.0-bin-hadoop3.tgz
+
+#RUN mkdir -p ${SPARK_HOME} \
+#    && curl -L -# https://dlcdn.apache.org/spark/spark-${SPARK_VERSION}/spark-${SPARK_VERSION}-bin-hadoop3.tgz -o spark-${SPARK_VERSION}-bin-hadoop3.tgz \
+#    && tar xvzf spark-${SPARK_VERSION}-bin-hadoop3.tgz --directory ${SPARK_HOME} --strip-components 1 \
+#    && rm -rf spark-${SPARK_VERSION}-bin-hadoop3.tgz
+
+ARG SPARK_TGZ_FILE=spark-4.0.0-bin-hadoop3-connect.tgz
+
+COPY ${SPARK_TGZ_FILE} /tmp/${SPARK_TGZ_FILE}
+
 RUN mkdir -p ${SPARK_HOME} \
-    && curl -L -# https://dlcdn.apache.org/spark/spark-${SPARK_VERSION}/spark-${SPARK_VERSION}-bin-hadoop3.tgz -o spark-${SPARK_VERSION}-bin-hadoop3.tgz \
-    && tar xvzf spark-${SPARK_VERSION}-bin-hadoop3.tgz --directory ${SPARK_HOME} --strip-components 1 \
-    && rm -rf spark-${SPARK_VERSION}-bin-hadoop3.tgz
+    && tar xvzf /tmp/${SPARK_TGZ_FILE} --directory ${SPARK_HOME} --strip-components 1 \
+    && rm -f /tmp/${SPARK_TGZ_FILE}
 
 # Add spark binaries to shell and enable execution
 RUN chmod u+x /opt/spark/sbin/* && \
@@ -73,6 +82,8 @@ RUN curl -L -# https://repo1.maven.org/maven2/io/delta/delta-storage/3.2.0/delta
 # Download hudi jars (Scala 2.13 for Spark 4.0) - experimental support
 RUN curl -L -# https://repo1.maven.org/maven2/org/apache/hudi/hudi-spark3-bundle_2.13/0.15.0/hudi-spark3-bundle_2.13-0.15.0.jar -Lo /opt/spark/jars/hudi-spark3-bundle_2.13-0.15.0.jar || echo "Hudi jar not found"
 
+# Download spark-sql-kafka-0-10_2.13
+RUN curl -L -# https://repo1.maven.org/maven2/org/apache/spark/spark-sql-kafka-0-10_2.13/4.0.0/spark-sql-kafka-0-10_2.13-4.0.0.jar -Lo /opt/spark/jars/spark-sql-kafka-0-10_2.13-4.0.0.jar || echo "spark-sql-kafka"
 
 COPY entrypoint.sh /opt/spark/entrypoint.sh
 RUN chmod u+x /opt/spark/entrypoint.sh

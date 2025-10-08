@@ -5,7 +5,7 @@ from pyspark.sql.functions import col, sum as _sum
 spark = SparkSession.builder \
     .master("spark://localhost:7077") \
     .appName("Schema Analysis") \
-    .config("spark.driver.host", "host.docker.internal") \
+    .config("spark.driver.host", "172.27.128.1") \
     .config("spark.driver.bindAddress", "0.0.0.0") \
     .config("spark.sql.adaptive.enabled", "false") \
     .config("spark.serializer", "org.apache.spark.serializer.KryoSerializer") \
@@ -33,6 +33,7 @@ df_processed = df.selectExpr("CAST(value AS STRING) as value")
 # Đây là cách thay thế cho foreachRDD trong Structured Streaming
 def process_batch(batch_df, batch_id):
     print(f"--- Processing batch #{batch_id} ---")
+    batch_df.show()
     if not batch_df.rdd.isEmpty():
         # Chuyển đổi cột value sang float và tính tổng
         # Lưu ý: batch_df là một DataFrame tĩnh thông thường, không phải RDD
