@@ -82,18 +82,20 @@ df = spark \
 df_processed = df.selectExpr("CAST(value AS STRING) as value")
 
 # 4. Sử dụng foreachBatch và trigger để xử lý
-query = df_processed \
-    .writeStream \
-    .foreachBatch(shutdown_manager.process) \
-    .trigger(processingTime='10 seconds') \
-    .start()
+try:
+    query = df_processed \
+        .writeStream \
+        .foreachBatch(shutdown_manager.process) \
+        .trigger(processingTime='10 seconds') \
+        .start()
 
-# 5. Liên kết query với trình quản lý và bắt đầu giám sát
-shutdown_manager.set_query(query)
-shutdown_manager.start()
+    # 5. Liên kết query với trình quản lý và bắt đầu giám sát
+    shutdown_manager.set_query(query)
+    shutdown_manager.start()
 
-# 6. Đợi stream kết thúc (bây giờ nó sẽ được dừng bởi luồng giám sát)
-query.awaitTermination()
-
+    # 6. Đợi stream kết thúc (bây giờ nó sẽ được dừng bởi luồng giám sát)
+    query.awaitTermination()
+except Exception as e:
+    print(e)
 print("Stream has been terminated.")
 spark.stop()
