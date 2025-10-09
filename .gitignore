@@ -2,3 +2,5 @@
 mssql-jdbc-7.0.0.jre8.jar
 data/*
 spark-logs/*
+spark-4.0.0-bin-hadoop3-connect.tgz
+chk-point-dir/*
