@@ -5,7 +5,7 @@ from pyspark.sql.functions import col, sum as _sum
 spark = SparkSession.builder \
     .master("spark://localhost:7077") \
     .appName("Schema Analysis") \
-    .config("spark.driver.host", "172.27.128.1") \
+    .config("spark.driver.host", "host.docker.internal") \
     .config("spark.driver.bindAddress", "0.0.0.0") \
     .config("spark.sql.adaptive.enabled", "false") \
     .config("spark.serializer", "org.apache.spark.serializer.KryoSerializer") \
@@ -20,7 +20,7 @@ spark.sparkContext.setLogLevel("WARN")
 df = spark \
     .readStream \
     .format("kafka") \
-    .option("kafka.bootstrap.servers", "localhost:9093") \
+    .option("kafka.bootstrap.servers", "redpanda:9092") \
     .option("subscribe", "my-topic") \
     .load()
 

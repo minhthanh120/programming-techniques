@@ -69,7 +69,9 @@ RUN pip3 install -r requirements.txt
 
 
 FROM pyspark AS pyspark-runner
-
+ARG KAFKA_CLIENTS_VERSION=3.7.0
+ARG SPARK_VERSION=4.0.0
+ARG SCALA_VERSION=2.13
 # Download iceberg spark runtime
 RUN curl -L -# https://repo1.maven.org/maven2/org/apache/iceberg/iceberg-spark-runtime-4.0_2.13/1.10.0/iceberg-spark-runtime-4.0_2.13-1.10.0.jar -Lo /opt/spark/jars/iceberg-spark-runtime-4.0_2.13-1.10.0.jar
 
@@ -85,6 +87,13 @@ RUN curl -L -# https://repo1.maven.org/maven2/org/apache/hudi/hudi-spark3-bundle
 # Download spark-sql-kafka-0-10_2.13
 RUN curl -L -# https://repo1.maven.org/maven2/org/apache/spark/spark-sql-kafka-0-10_2.13/4.0.0/spark-sql-kafka-0-10_2.13-4.0.0.jar -Lo /opt/spark/jars/spark-sql-kafka-0-10_2.13-4.0.0.jar || echo "spark-sql-kafka"
 
+RUN curl -L -# "https://repo1.maven.org/maven2/org/apache/kafka/kafka-clients/4.0.0/kafka-clients-4.0.0.jar" -Lo "/opt/spark/jars/kafka-clients-4.0.0.jar"
+
+RUN curl -L -# "https://repo1.maven.org/maven2/org/apache/spark/spark-token-provider-kafka-0-10_2.13/4.0.0/spark-token-provider-kafka-0-10_2.13-4.0.0.jar" \
+    -Lo "/opt/spark/jars/spark-token-provider-kafka-0-10_2.13-4.0.0.jar"
+
+RUN curl -L -# "https://repo1.maven.org/maven2/org/apache/commons/commons-pool2/2.12.0/commons-pool2-2.12.0.jar" \
+    -o "/opt/spark/jars/commons-pool2-2.12.0.jar"
 COPY entrypoint.sh /opt/spark/entrypoint.sh
 RUN chmod u+x /opt/spark/entrypoint.sh
 
