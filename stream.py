@@ -1,7 +1,6 @@
 import time
 import threading
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import col
 
 
 # Lớp quản lý việc tự động tắt stream
@@ -59,9 +58,12 @@ class StreamShutdownManager:
 # 1. Khởi tạo SparkSession
 spark = SparkSession.builder \
     .master("spark://localhost:7077") \
-    .appName("Schema Analysis with Auto-Shutdown") \
+    .appName("Schema Analysis") \
     .config("spark.driver.host", "host.docker.internal") \
     .config("spark.driver.bindAddress", "0.0.0.0") \
+    .config("spark.sql.adaptive.enabled", "false") \
+    .config("spark.serializer", "org.apache.spark.serializer.KryoSerializer") \
+    .config("spark.jars.packages", "org.apache.spark:spark-sql-kafka-0-10_2.13:4.0.0") \
     .getOrCreate()
 
 spark.sparkContext.setLogLevel("WARN")
@@ -73,7 +75,7 @@ shutdown_manager = StreamShutdownManager(timeout_seconds=20)
 df = spark \
     .readStream \
     .format("kafka") \
-    .option("kafka.bootstrap.servers", "localhost:9093") \
+    .option("kafka.bootstrap.servers", "redpanda:9092") \
     .option("subscribe", "my-topic") \
     .load()
 
