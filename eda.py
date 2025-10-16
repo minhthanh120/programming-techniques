@@ -6,7 +6,7 @@ import json
 
 BUCKET_NAME = 'data'
 MINIO_ENDPOINT = 'minio:9000'
-def analyze_and_infer_schema(object_name:str):
+def analyze_and_infer_schema(object_name:str, extract_value:str):
     """Uses Spark to analyze the full dataset and infer its schema."""
 
     spark = SparkSession.builder \
@@ -32,10 +32,15 @@ def analyze_and_infer_schema(object_name:str):
     df = spark.read.csv(
         s3_path,
         header=True,
-        inferSchema=True,
-        nullValue=''
+        inferSchema=False,
+        nullValue='',
+        quote='"',
+        escape='"',
+        multiLine=True
     )
-
+    if extract_value:
+        print(f"{extract_value}")
+        df.select(f'{extract_value}').distinct().show()
 
     print("\n[1] Inferred Schema:")
     df.printSchema()
@@ -56,9 +61,11 @@ def analyze_and_infer_schema(object_name:str):
     schema_as_json = df.schema.json()
     parsed_json = json.loads(schema_as_json)
     print(json.dumps(parsed_json, indent=2))
-
     spark.stop()
 
 if __name__ == "__main__":
     object_name = sys.argv[1]
-    analyze_and_infer_schema(object_name)
+    extract_value =None
+    if len(sys.argv)>2:
+        extract_value = sys.argv[2]
+    analyze_and_infer_schema(object_name, extract_value)

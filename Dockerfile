@@ -81,6 +81,7 @@ RUN curl -L -# https://repo1.maven.org/maven2/io/delta/delta-core_2.13/2.4.0/del
 RUN curl -L -# https://repo1.maven.org/maven2/io/delta/delta-spark_2.13/3.2.0/delta-spark_2.13-3.2.0.jar -Lo /opt/spark/jars/delta-spark_2.13-3.2.0.jar || echo "Delta spark jar not found"
 RUN curl -L -# https://repo1.maven.org/maven2/io/delta/delta-storage/3.2.0/delta-storage-3.2.0.jar -Lo /opt/spark/jars/delta-storage-3.2.0.jar || echo "Delta storage jar not found"
 
+RUN curl -L -# https://jdbc.postgresql.org/download/postgresql-42.7.7.jar -Lo /opt/spark/jars/postgresql-42.7.7.jar || echo "postgresql-42.7.7.jar not found"
 # Download hudi jars (Scala 2.13 for Spark 4.0) - experimental support
 RUN curl -L -# https://repo1.maven.org/maven2/org/apache/hudi/hudi-spark3-bundle_2.13/0.15.0/hudi-spark3-bundle_2.13-0.15.0.jar -Lo /opt/spark/jars/hudi-spark3-bundle_2.13-0.15.0.jar || echo "Hudi jar not found"
 
