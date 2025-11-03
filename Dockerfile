@@ -1,41 +1,25 @@
-FROM python:3.11-bullseye AS spark-base
+FROM python:3.11-slim-bullseye AS builder
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
       sudo \
       curl \
-      vim \
       unzip \
       rsync \
-      openjdk-17-jdk \
+      openjdk-17-jre-headless \
+      ssh \
       build-essential \
-      software-properties-common \
-      ssh && \
-    apt-get clean && \
+      software-properties-common && \
     rm -rf /var/lib/apt/lists/*
-
-## Download spark and hadoop dependencies and install
 
 # ENV variables
 ENV SPARK_VERSION=4.0.0
-
-ENV SPARK_HOME=${SPARK_HOME:-"/opt/spark"}
-ENV HADOOP_HOME=${HADOOP_HOME:-"/opt/hadoop"}
-
-ENV SPARK_MASTER_PORT=7077
-ENV SPARK_MASTER_HOST=spark-master
-ENV SPARK_MASTER="spark://$SPARK_MASTER_HOST:$SPARK_MASTER_PORT"
-
-ENV PYTHONPATH=$SPARK_HOME/python/:$PYTHONPATH
+ENV SPARK_HOME="/opt/spark"
+ENV PATH="$SPARK_HOME/bin:$SPARK_HOME/sbin:$PATH"
 ENV PYSPARK_PYTHON=python3
+ENV PYTHONPATH="$SPARK_HOME/python/:$PYTHONPATH"
 
-# Add iceberg spark runtime jar to IJava classpath
-ENV IJAVA_CLASSPATH=/opt/spark/jars/*
-
-RUN mkdir -p ${HADOOP_HOME} && mkdir -p ${SPARK_HOME}
-WORKDIR ${SPARK_HOME}
-
-# Download spark
+## Download spark and hadoop dependencies and install
 # see resources: https://dlcdn.apache.org/spark/spark-4.0./
 # filename: spark-4.0.0-bin-hadoop3.tgz
 
@@ -50,55 +34,61 @@ COPY ${SPARK_TGZ_FILE} /tmp/${SPARK_TGZ_FILE}
 
 RUN mkdir -p ${SPARK_HOME} \
     && tar xvzf /tmp/${SPARK_TGZ_FILE} --directory ${SPARK_HOME} --strip-components 1 \
-    && rm -f /tmp/${SPARK_TGZ_FILE}
+    && rm -f /tmp/${SPARK_TGZ_FILE}\
+  && rm -rf /opt/spark/examples /opt/spark/data /opt/spark/kubernetes /opt/spark/yarn
+# --- Install python packages ---
+# Using virtual environment for isolate and easy to move
+ENV VIRTUAL_ENV=/opt/venv
+RUN python3 -m venv $VIRTUAL_ENV
+ENV PATH="$VIRTUAL_ENV/bin:$PATH"
 
-# Add spark binaries to shell and enable execution
-RUN chmod u+x /opt/spark/sbin/* && \
-    chmod u+x /opt/spark/bin/*
-ENV PATH="$PATH:$SPARK_HOME/bin:$SPARK_HOME/sbin"
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# --- Install jars ---
+WORKDIR /opt/spark/jars
+RUN curl -L -# https://repo1.maven.org/maven2/org/apache/iceberg/iceberg-spark-runtime-4.0_2.13/1.10.0/iceberg-spark-runtime-4.0_2.13-1.10.0.jar -o iceberg-spark-runtime-4.0_2.13-1.10.0.jar && \
+    curl -L -# https://repo1.maven.org/maven2/io/delta/delta-core_2.13/2.4.0/delta-core_2.13-2.4.0.jar -o delta-core_2.13-2.4.0.jar && \
+    curl -L -# https://repo1.maven.org/maven2/io/delta/delta-spark_2.13/3.2.0/delta-spark_2.13-3.2.0.jar -o delta-spark_2.13-3.2.0.jar && \
+    curl -L -# https://repo1.maven.org/maven2/io/delta/delta-storage/3.2.0/delta-storage-3.2.0.jar -o delta-storage-3.2.0.jar && \
+    curl -L -# https://jdbc.postgresql.org/download/postgresql-42.7.7.jar -o postgresql-42.7.7.jar && \
+    curl -L -# https://repo1.maven.org/maven2/org/apache/hudi/hudi-spark3-bundle_2.13/0.15.0/hudi-spark3-bundle_2.13-0.15.0.jar -o hudi-spark3-bundle_2.13-0.15.0.jar && \
+    curl -L -# https://repo1.maven.org/maven2/org/apache/spark/spark-sql-kafka-0-10_2.13/4.0.0/spark-sql-kafka-0-10_2.13-4.0.0.jar -o spark-sql-kafka-0-10_2.13-4.0.0.jar && \
+    curl -L -# https://repo1.maven.org/maven2/org/apache/kafka/kafka-clients/4.0.0/kafka-clients-4.0.0.jar -o kafka-clients-4.0.0.jar && \
+    curl -L -# https://repo1.maven.org/maven2/org/apache/spark/spark-token-provider-kafka-0-10_2.13/4.0.0/spark-token-provider-kafka-0-10_2.13-4.0.0.jar -o spark-token-provider-kafka-0-10_2.13-4.0.0.jar && \
+    curl -L -# https://repo1.maven.org/maven2/org/apache/commons/commons-pool2/2.12.0/commons-pool2-2.12.0.jar -o commons-pool2-2.12.0.jar
+
+WORKDIR /
+
+# =========================================================================
+FROM python:3.11-slim-bullseye AS final-runner
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+      sudo \
+      curl \
+      openjdk-17-jre-headless \
+      ssh && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+ENV SPARK_HOME="/opt/spark"
+ENV PATH="$SPARK_HOME/bin:$SPARK_HOME/sbin:$PATH"
+ENV PYSPARK_PYTHON=python3
+ENV VIRTUAL_ENV=/opt/venv
+ENV PATH="$VIRTUAL_ENV/bin:$PATH"
+
+COPY --from=builder ${SPARK_HOME} ${SPARK_HOME}
+
+COPY --from=builder ${VIRTUAL_ENV} ${VIRTUAL_ENV}
 
 # Add a spark config for all nodes
 COPY conf/spark-defaults.conf "$SPARK_HOME/conf/"
-
-
-FROM spark-base AS pyspark
-
-# Install python deps
-COPY requirements.txt .
-RUN pip3 install -r requirements.txt
-
-
-FROM pyspark AS pyspark-runner
-ARG KAFKA_CLIENTS_VERSION=3.7.0
-ARG SPARK_VERSION=4.0.0
-ARG SCALA_VERSION=2.13
-# Download iceberg spark runtime
-RUN curl -L -# https://repo1.maven.org/maven2/org/apache/iceberg/iceberg-spark-runtime-4.0_2.13/1.10.0/iceberg-spark-runtime-4.0_2.13-1.10.0.jar -Lo /opt/spark/jars/iceberg-spark-runtime-4.0_2.13-1.10.0.jar
-
-# Download delta jars (Scala 2.13 for Spark 4.0)
-# Note: Delta Lake support for Spark 4.0 is experimental - these may not work perfectly
-RUN curl -L -# https://repo1.maven.org/maven2/io/delta/delta-core_2.13/2.4.0/delta-core_2.13-2.4.0.jar -Lo /opt/spark/jars/delta-core_2.13-2.4.0.jar || echo "Delta core jar not found"
-RUN curl -L -# https://repo1.maven.org/maven2/io/delta/delta-spark_2.13/3.2.0/delta-spark_2.13-3.2.0.jar -Lo /opt/spark/jars/delta-spark_2.13-3.2.0.jar || echo "Delta spark jar not found"
-RUN curl -L -# https://repo1.maven.org/maven2/io/delta/delta-storage/3.2.0/delta-storage-3.2.0.jar -Lo /opt/spark/jars/delta-storage-3.2.0.jar || echo "Delta storage jar not found"
-
-RUN curl -L -# https://jdbc.postgresql.org/download/postgresql-42.7.7.jar -Lo /opt/spark/jars/postgresql-42.7.7.jar || echo "postgresql-42.7.7.jar not found"
-# Download hudi jars (Scala 2.13 for Spark 4.0) - experimental support
-RUN curl -L -# https://repo1.maven.org/maven2/org/apache/hudi/hudi-spark3-bundle_2.13/0.15.0/hudi-spark3-bundle_2.13-0.15.0.jar -Lo /opt/spark/jars/hudi-spark3-bundle_2.13-0.15.0.jar || echo "Hudi jar not found"
-
-# Download spark-sql-kafka-0-10_2.13
-RUN curl -L -# https://repo1.maven.org/maven2/org/apache/spark/spark-sql-kafka-0-10_2.13/4.0.0/spark-sql-kafka-0-10_2.13-4.0.0.jar -Lo /opt/spark/jars/spark-sql-kafka-0-10_2.13-4.0.0.jar || echo "spark-sql-kafka"
-
-RUN curl -L -# "https://repo1.maven.org/maven2/org/apache/kafka/kafka-clients/4.0.0/kafka-clients-4.0.0.jar" -Lo "/opt/spark/jars/kafka-clients-4.0.0.jar"
-
-RUN curl -L -# "https://repo1.maven.org/maven2/org/apache/spark/spark-token-provider-kafka-0-10_2.13/4.0.0/spark-token-provider-kafka-0-10_2.13-4.0.0.jar" \
-    -Lo "/opt/spark/jars/spark-token-provider-kafka-0-10_2.13-4.0.0.jar"
-
-RUN curl -L -# "https://repo1.maven.org/maven2/org/apache/commons/commons-pool2/2.12.0/commons-pool2-2.12.0.jar" \
-    -o "/opt/spark/jars/commons-pool2-2.12.0.jar"
 COPY entrypoint.sh /opt/spark/entrypoint.sh
-RUN chmod u+x /opt/spark/entrypoint.sh
-
-
+# Add spark binaries to shell and enable execution
+RUN chmod u+x /opt/spark/entrypoint.sh && \
+    chmod u+x /opt/spark/sbin/* && \
+    chmod u+x /opt/spark/bin/*
 # Optionally install Jupyter
 # FROM pyspark-runner AS pyspark-jupyter
 
