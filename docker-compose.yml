@@ -13,7 +13,6 @@ services:
       - ./scripts:/opt/spark/scripts
       - ./data:/opt/spark/data
       - ./spark-logs:/opt/spark/spark-events
-      - ./warehouse:/opt/spark/warehouse
     env_file:
       - .env.spark
     ports:
@@ -34,7 +33,6 @@ services:
       - ./scripts:/opt/spark/scripts
       - ./data:/opt/spark/data
       - ./spark-logs:/opt/spark/spark-events
-      - ./warehouse:/opt/spark/warehouse
     ports:
       - '18080:18080'
 
@@ -52,7 +50,6 @@ services:
       - ./scripts:/opt/spark/scripts
       - ./data:/opt/spark/data
       - ./spark-logs:/opt/spark/spark-events
-      - ./warehouse:/opt/spark/warehouse
   minio:
     image: minio/minio:RELEASE.2025-05-24T17-08-30Z
     hostname: minio
@@ -66,7 +63,33 @@ services:
       MINIO_ROOT_PASSWORD: dev@1234
     volumes:
       - minio-data:/data
-
+  rabbitmq:
+    image: "rabbitmq:3-management"
+    container_name: rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+  redis:
+      image: redis:7.4-alpine
+      container_name: redis-server
+      restart: always
+      ports:
+        - "6379:6379"
+      command: redis-server --requirepass master123 --appendonly yes
+      volumes:
+        - redis_data:/data
+  mongodb:
+    image: mongo
+    container_name: mongodb
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: password
+    volumes:
+      - mongo-data:/data/db
 #  namenode:
 #    image: bde2020/hadoop-namenode:2.0.0-hadoop3.2.1-java8
 #    container_name: namenode
@@ -138,8 +161,11 @@ services:
     ports:
       - "5432:5432"
 volumes:
+  mongo-data:
   spark-logs:
   minio-data:
   postgres_data:
+  rabbitmq_data:
+  redis_data:
 #  hadoop_namenode:
 #  hadoop_datanode:

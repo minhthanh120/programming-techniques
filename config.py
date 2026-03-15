@@ -1,1 +1,1 @@
-POSTGRES_CONNECTION_STRING='jdbc:postgresql://postgres:5432/postgres'
+POSTGRES_CONNECTION_STRING='jdbc:postgresql://postgres:5432/airbnb'
