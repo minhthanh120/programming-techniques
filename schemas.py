@@ -43,19 +43,19 @@ LISTING_DETAIL = StructType([
     StructField("neighbourhood", StringType(), True),
     StructField("neighbourhood_cleansed", StringType(), True),
     StructField("neighbourhood_group_cleansed", StringType(), True),
-    StructField("latitude", DecimalType(9,7), True),
-    StructField("longitude", DecimalType(9,7), True),
+    StructField("latitude", DecimalType(10, 8), True),
+    StructField("longitude", DecimalType(10, 8), True),
 
     StructField("property_type", StringType(), True),
     StructField("room_type", StringType(), True),
     StructField("accommodates", IntegerType(), True),
-    StructField("bathrooms", DecimalType(2,2), True),
+    StructField("bathrooms", DecimalType(2,1), True),
     StructField("bathrooms_text", StringType(), True),
-    StructField("bedrooms", DecimalType(2,2), True),
+    StructField("bedrooms", DecimalType(2,1), True),
     StructField("beds", IntegerType(), True),
     StructField("amenities", StringType(), True),
 
-    StructField("price", DecimalType(9,2), True),
+    StructField("price", StringType(), True),
     StructField("minimum_nights", IntegerType(), True),
     StructField("maximum_nights", IntegerType(), True),
 
@@ -88,13 +88,13 @@ LISTING_DETAIL = StructType([
     StructField("first_review", DateType(), True),
     StructField("last_review", DateType(), True),
 
-    StructField("review_scores_rating", DecimalType(2,2), True),
-    StructField("review_scores_accuracy", DecimalType(2,2), True),
-    StructField("review_scores_cleanliness", DecimalType(2,2), True),
-    StructField("review_scores_checkin", DecimalType(2,2), True),
-    StructField("review_scores_communication", DecimalType(2,2), True),
-    StructField("review_scores_location", DecimalType(2,2), True),
-    StructField("review_scores_value", DecimalType(2,2), True),
+    StructField("review_scores_rating", DecimalType(2,1), True),
+    StructField("review_scores_accuracy", DecimalType(2,1), True),
+    StructField("review_scores_cleanliness", DecimalType(2,1), True),
+    StructField("review_scores_checkin", DecimalType(2,1), True),
+    StructField("review_scores_communication", DecimalType(2,1), True),
+    StructField("review_scores_location", DecimalType(2,1), True),
+    StructField("review_scores_value", DecimalType(2,1), True),
 
     StructField("license", StringType(), True),
     StructField("instant_bookable", BooleanType(), True),
@@ -104,7 +104,7 @@ LISTING_DETAIL = StructType([
     StructField("calculated_host_listings_count_private_rooms", IntegerType(), True),
     StructField("calculated_host_listings_count_shared_rooms", IntegerType(), True),
 
-    StructField("reviews_per_month", DecimalType(2,2), True)
+    StructField("reviews_per_month", DecimalType(2,1), True)
 ])
 LISTINGS = StructType([
     StructField("id", IntegerType(), True),

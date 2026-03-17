@@ -41,17 +41,17 @@ create table "bronze".listings(
 	neighbourhood varchar,
 	neighbourhood_cleansed varchar,
 	neighbourhood_group_cleansed varchar,
-    latitude decimal(9,7),
-    longitude decimal(9,7),
+    latitude decimal(10,8),
+    longitude decimal(10,8),
 	property_type varchar,
 	room_type varchar,
 	accommodates int,
-	bathrooms decimal(2,2),
+	bathrooms decimal(2,1),
 	bathrooms_text varchar,
-	bedrooms decimal(2,2),
+	bedrooms decimal(2,1),
 	beds int,
 	amenities varchar,
-	price decimal(9,2),
+	price varchar,
 	minimum_nights int,
 	maximum_nights int,
 	minimum_minimum_nights int,
@@ -76,26 +76,36 @@ create table "bronze".listings(
 	estimated_revenue_l365d int,
 	first_review date,
 	last_review date,
-	review_scores_rating decimal(2,2),
-	review_scores_accuracy decimal(2,2),
-	review_scores_cleanliness decimal(2,2),
-	review_scores_checkin decimal(2,2),
-	review_scores_communication decimal(2,2),
-	review_scores_location decimal(2,2),
-	review_scores_value decimal(2,2),
+	review_scores_rating decimal(2,1),
+	review_scores_accuracy decimal(2,1),
+	review_scores_cleanliness decimal(2,1),
+	review_scores_checkin decimal(2,1),
+	review_scores_communication decimal(2,1),
+	review_scores_location decimal(2,1),
+	review_scores_value decimal(2,1),
 	license varchar,
 	instant_bookable boolean,
 	calculated_host_listings_count int,
 	calculated_host_listings_count_entire_homes int,
 	calculated_host_listings_count_private_rooms int,
 	calculated_host_listings_count_shared_rooms int,
-	reviews_per_month decimal(2,2)
+	reviews_per_month decimal(2,1)
 );
-create table "bronze".review(
+
+create table "bronze".reviews(
+	id int,
+	listing_id int,
+	"date" date,
+	reviewer_id int,
+	reviewer_name varchar,
+	comments varchar
+);
+/*
+create table "bronze".reviews(
 listing_id int,
 "date" date
 );
-
+*/
 create table "visualisations".neighbourhood(
 neighbourhood varchar,
 neighbourhood_group varchar
@@ -116,8 +126,8 @@ create table "visualisations".listing(
     host_name varchar,
     neighbourhood_group varchar,
     neighbourhood varchar,
-    latitude decimal(9,7),
-    longitude decimal(9,7),
+    latitude decimal(10,8),
+    longitude decimal(10,8),
     room_type varchar,
     price int,
     minimum_nights int,

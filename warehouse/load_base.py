@@ -2,7 +2,7 @@ from pyspark.sql import SparkSession
 from pyspark.sql.types import StructType
 
 from config import POSTGRES_CONNECTION_STRING
-from schemas import LISTING_DETAIL
+from schemas import LISTING_DETAIL, PROD_SCHEMA_CALENDAR, REVIEW_DETAIL
 
 
 class LoadBase:
@@ -53,3 +53,7 @@ class LoadBase:
 
 listing = LoadBase('bronze','listings', LISTING_DETAIL)
 listing.load()
+#calendar = LoadBase('bronze', 'calendar', PROD_SCHEMA_CALENDAR)
+#calendar.load()
+#review = LoadBase('bronze', 'reviews', REVIEW_DETAIL)
+#review.load()
