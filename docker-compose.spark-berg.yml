@@ -1,0 +1,158 @@
+services:
+  spark-iceberg:
+    image: tabulario/spark-iceberg
+    container_name: spark-iceberg
+    build: spark/
+    networks:
+      iceberg_net:
+    depends_on:
+      - polaris
+      - minio
+    volumes:
+      - ./warehouse:/home/iceberg/warehouse
+      - ./notebooks:/home/iceberg/notebooks/notebooks
+      - ./conf/spark-defaults.conf:/opt/spark/conf/spark-defaults.conf
+    environment:
+      - AWS_ACCESS_KEY_ID=admin
+      - AWS_SECRET_ACCESS_KEY=dev@1234
+      - AWS_REGION=us-east-1
+    ports:
+      - 8888:8888
+      - 8080:8080
+      - 10000:10000
+      - 10001:10001
+  
+  polaris:
+    image: apache/polaris:latest
+    container_name: polaris
+    networks:
+      iceberg_net:
+    ports:
+      - 8181:8181   # Iceberg REST API (same port your clients already point to)
+      - 8182:8182   # Polaris admin/management API
+    environment:
+      - AWS_ACCESS_KEY_ID=admin
+      - AWS_SECRET_ACCESS_KEY=dev@1234
+      - AWS_REGION=us-east-1
+      - polaris.bootstrap.credentials=default-realm,root,s3cr3t
+      - polaris.realm-context.realms=default-realm
+      - polaris.features."SUPPORTED_CATALOG_STORAGE_TYPES"=["S3"]
+      - quarkus.profile=dev
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8182/q/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    depends_on:
+      - minio
+
+  polaris-setup:
+    image: alpine/curl
+    container_name: polaris-setup
+    networks:
+      iceberg_net:
+    depends_on:
+      polaris:
+        condition: service_healthy
+    entrypoint: >
+      sh -c "
+      TOKEN=$$(curl -s -X POST http://polaris:8181/api/catalog/v1/oauth/tokens \
+        -d 'grant_type=client_credentials&client_id=root&client_secret=s3cr3t&scope=PRINCIPAL_ROLE:ALL' \
+        | sed -E 's/.*access_token\":\"([^\"]+)\".*/\1/') &&
+      curl -s -X POST http://polaris:8182/api/management/v1/catalogs \
+        -H \"Authorization: Bearer $$TOKEN\" \
+        -H 'Content-Type: application/json' \
+        -H 'Polaris-Realm: default-realm' \
+        -d '{
+          \"catalog\": {
+            \"name\": \"warehouse\",
+            \"type\": \"INTERNAL\",
+            \"properties\": { \"default-base-location\": \"s3://warehouse/\" },
+            \"storageConfigInfo\": {
+              \"storageType\": \"S3\",
+              \"endpoint\": \"http://minio:9000\",
+              \"allowedLocations\": [\"s3://warehouse/\"]
+            }
+          }
+        }' &&
+      echo 'Catalog created (or already existed)'
+      "
+  minio:
+    image: quay.io/minio/minio
+    container_name: minio
+    environment:
+      - MINIO_ROOT_USER=admin
+      - MINIO_ROOT_PASSWORD=dev@1234
+      - MINIO_DOMAIN=minio
+    networks:
+      iceberg_net:
+        aliases:
+          - warehouse.minio
+    ports:
+      - 9001:9001
+      - 9000:9000
+    command: ["server", "/data", "--console-address", ":9001"]
+  mc:
+    depends_on:
+      - minio
+    image: minio/mc
+    container_name: mc
+    networks:
+      iceberg_net:
+    environment:
+      - AWS_ACCESS_KEY_ID=admin
+      - AWS_SECRET_ACCESS_KEY=dev@1234
+      - AWS_REGION=us-east-1
+    entrypoint: |
+      /bin/sh -c "
+      until (/usr/bin/mc alias set minio http://minio:9000 admin password) do echo '...waiting...' && sleep 1; done;
+      /usr/bin/mc rm -r --force minio/warehouse;
+      /usr/bin/mc mb minio/warehouse;
+      /usr/bin/mc policy set public minio/warehouse;
+      tail -f /dev/null
+      "
+  
+  superset:
+    build:
+      context: .
+      dockerfile: superset.Dockerfile
+    container_name: superset
+
+    ports:
+      - "8088:8088"
+    networks:
+      - iceberg_net
+    volumes:
+      - superset_home:/app/superset_home
+    environment:
+      SUPERSET_SECRET_KEY: dev@1234
+    command: >
+      /bin/sh -c "
+      superset db upgrade &&
+      superset fab create-admin
+      --username admin
+      --firstname Admin
+      --lastname User
+      --email admin@example.com
+      --password admin &&
+      superset init &&
+      gunicorn --bind 0.0.0.0:8088 'superset.app:create_app()'
+      "
+  trino:
+    image: trinodb/trino:472
+    container_name: trino
+    hostname: trino
+    depends_on:
+      - polaris
+      - minio
+    networks:
+      iceberg_net:
+    ports:
+      - "8081:8080"
+    volumes:
+      - ./trino/etc:/etc/trino
+
+volumes:
+  superset_home:
+networks:
+  iceberg_net:

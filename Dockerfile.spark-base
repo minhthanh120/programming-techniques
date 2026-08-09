@@ -1,0 +1,121 @@
+FROM python:3.11-slim-bullseye AS builder
+
+ARG SPARK_VERSION=4.0.4
+ARG SPARK_TGZ_FILE=spark-4.0.4-bin-hadoop3-connect.tgz
+ARG ICEBERG_VERSION=1.10.0
+ARG HADOOP_VERSION=3.4.1
+ARG AWS_SDK_V2_VERSION=2.24.6
+
+ENV SPARK_HOME=/opt/spark
+ENV VIRTUAL_ENV=/opt/venv
+ENV PATH=${VIRTUAL_ENV}/bin:${SPARK_HOME}/bin:${SPARK_HOME}/sbin:${PATH}
+ENV PYSPARK_PYTHON=python3
+ENV PYTHONPATH=${SPARK_HOME}/python
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+      curl \
+      unzip \
+      rsync \
+      openjdk-17-jre-headless \
+      ssh \
+      ca-certificates \
+      build-essential && \
+    rm -rf /var/lib/apt/lists/*
+
+# The Spark distribution is supplied in the build context.
+# Spark 4.x is built for Scala 2.13.
+COPY ${SPARK_TGZ_FILE} /tmp/${SPARK_TGZ_FILE}
+
+RUN mkdir -p ${SPARK_HOME} && \
+    tar xzf /tmp/${SPARK_TGZ_FILE} \
+      --directory ${SPARK_HOME} \
+      --strip-components 1 && \
+    rm -f /tmp/${SPARK_TGZ_FILE} && \
+    rm -rf \
+      ${SPARK_HOME}/examples \
+      ${SPARK_HOME}/data \
+      ${SPARK_HOME}/kubernetes \
+      ${SPARK_HOME}/yarn \
+      ${SPARK_HOME}/R
+
+# Python runtime used by Spark jobs.
+ENV PATH=${VIRTUAL_ENV}/bin:${PATH}
+RUN python3 -m venv ${VIRTUAL_ENV}
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
+
+# ---------------------------------------------------------------------------
+# Runtime JARs
+#
+# Spark 4.0.4 -> Scala 2.13
+# Iceberg 1.10.0 -> Spark 4.0 runtime
+# Spark's Hadoop 3.x distribution uses Hadoop 3.4.1.
+#
+# hadoop-aws and the AWS SDK v2 bundle are kept at the exact Hadoop 3.4.1
+# dependency versions. Do NOT mix these versions with another Hadoop line.
+# ---------------------------------------------------------------------------
+WORKDIR ${SPARK_HOME}/jars
+
+RUN set -eux; \
+    curl -fL --retry 3 \
+      "https://repo1.maven.org/maven2/org/apache/iceberg/iceberg-spark-runtime-4.0_2.13/${ICEBERG_VERSION}/iceberg-spark-runtime-4.0_2.13-${ICEBERG_VERSION}.jar" \
+      -o "iceberg-spark-runtime-4.0_2.13-${ICEBERG_VERSION}.jar"; \
+    curl -fL --retry 3 \
+      "https://repo1.maven.org/maven2/org/apache/iceberg/iceberg-aws-bundle/${ICEBERG_VERSION}/iceberg-aws-bundle-${ICEBERG_VERSION}.jar" \
+      -o "iceberg-aws-bundle-${ICEBERG_VERSION}.jar"; \
+    curl -fL --retry 3 \
+      "https://repo1.maven.org/maven2/org/apache/hadoop/hadoop-aws/${HADOOP_VERSION}/hadoop-aws-${HADOOP_VERSION}.jar" \
+      -o "hadoop-aws-${HADOOP_VERSION}.jar"; \
+    curl -fL --retry 3 \
+      "https://repo1.maven.org/maven2/software/amazon/awssdk/bundle/${AWS_SDK_V2_VERSION}/bundle-${AWS_SDK_V2_VERSION}.jar" \
+      -o "bundle-${AWS_SDK_V2_VERSION}.jar"
+
+# This image is for Spark Standalone + PySpark + Iceberg + S3/MinIO.
+# Remove optional connectors that are not part of this runtime.
+RUN rm -f \
+      ${SPARK_HOME}/jars/spark-connect_*.jar \
+      ${SPARK_HOME}/jars/spark-connect-client_*.jar \
+      ${SPARK_HOME}/jars/spark-mllib_*.jar \
+      ${SPARK_HOME}/jars/spark-graphx_*.jar \
+      ${SPARK_HOME}/jars/spark-streaming_*.jar \
+      ${SPARK_HOME}/jars/spark-sql-kafka-0-10_*.jar \
+      ${SPARK_HOME}/jars/spark-token-provider-kafka-0-10_*.jar \
+      ${SPARK_HOME}/jars/kafka-clients-*.jar \
+      ${SPARK_HOME}/jars/hudi-*.jar \
+      ${SPARK_HOME}/jars/delta-*.jar \
+      ${SPARK_HOME}/jars/postgresql-*.jar \
+      ${SPARK_HOME}/jars/commons-pool2-*.jar \
+      2>/dev/null || true
+
+WORKDIR /
+
+
+FROM python:3.11-slim-bullseye AS final-runner
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+      openjdk-17-jre-headless \
+      ssh \
+      ca-certificates && \
+    rm -rf /var/lib/apt/lists/*
+
+ENV SPARK_HOME=/opt/spark
+ENV VIRTUAL_ENV=/opt/venv
+ENV PATH=${VIRTUAL_ENV}/bin:${SPARK_HOME}/bin:${SPARK_HOME}/sbin:${PATH}
+ENV PYSPARK_PYTHON=python3
+ENV PYTHONPATH=${SPARK_HOME}/python
+
+COPY --from=builder ${SPARK_HOME} ${SPARK_HOME}
+COPY --from=builder ${VIRTUAL_ENV} ${VIRTUAL_ENV}
+
+COPY conf/spark-defaults.conf ${SPARK_HOME}/conf/
+COPY entrypoint.sh ${SPARK_HOME}/entrypoint.sh
+
+RUN sed -i 's/\r$//' ${SPARK_HOME}/entrypoint.sh && \
+    chmod +x ${SPARK_HOME}/entrypoint.sh
+
+ENTRYPOINT ["/opt/spark/entrypoint.sh"]
+CMD ["bash"]

@@ -1,0 +1,317 @@
+services:
+
+  # ============================================================
+  # Spark Standalone Master
+  # ============================================================
+  spark-master:
+    build:
+      context: .
+      dockerfile: Dockerfile.spark-base
+    image: local/spark-base:4.0.4
+    container_name: spark-master
+    hostname: spark-master
+
+    networks:
+      - iceberg_net
+
+    ports:
+      - "7077:7077"
+      - "8080:8080"
+
+    environment:
+      SPARK_NO_DAEMONIZE: "true"
+      SPARK_WORKLOAD: /opt/spark/sbin/start-master.sh
+      AWS_ACCESS_KEY_ID: admin
+      AWS_SECRET_ACCESS_KEY: dev@1234
+      AWS_REGION: us-east-1
+
+    depends_on:
+      polaris:
+        condition: service_healthy
+      minio:
+        condition: service_started
+
+
+  # ============================================================
+  # Spark Standalone Worker
+  # ============================================================
+  spark-worker:
+    image: local/spark-base:4.0.4
+    container_name: spark-worker
+    hostname: spark-worker
+    networks:
+      - iceberg_net
+
+    ports:
+      - "8081:8081"
+
+    environment:
+      SPARK_NO_DAEMONIZE: "true"
+      SPARK_WORKLOAD: /opt/spark/sbin/start-worker.sh
+      AWS_ACCESS_KEY_ID: admin
+      AWS_SECRET_ACCESS_KEY: dev@1234
+      AWS_REGION: us-east-1
+
+    depends_on:
+      - spark-master
+      - polaris
+      - minio
+
+
+  # ============================================================
+  # Jupyter Notebook
+  # ============================================================
+  jupyter:
+    image: jupyter/pyspark-notebook:latest
+    container_name: jupyter
+    hostname: jupyter
+
+    networks:
+      - iceberg_net
+
+    ports:
+      - "8888:8888"
+
+    volumes:
+      - ./notebooks:/home/jovyan/work
+
+    environment:
+      AWS_ACCESS_KEY_ID: admin
+      AWS_SECRET_ACCESS_KEY: dev@1234
+      AWS_REGION: us-east-1
+
+      PYSPARK_PYTHON: python3
+
+    depends_on:
+      - spark-master
+      - spark-worker
+
+    command: >
+      start-notebook.py
+      --NotebookApp.ip=0.0.0.0
+      --NotebookApp.port=8888
+      --NotebookApp.allow_root=True
+      --NotebookApp.token=
+
+
+  # ============================================================
+  # Polaris
+  # ============================================================
+  polaris:
+    image: apache/polaris:latest
+    container_name: polaris
+    hostname: polaris
+
+    networks:
+      - iceberg_net
+
+    ports:
+      - "8181:8181"
+      - "8182:8182"
+
+    environment:
+      AWS_ACCESS_KEY_ID: admin
+      AWS_SECRET_ACCESS_KEY: dev@1234
+      AWS_REGION: us-east-1
+
+      POLARIS_BOOTSTRAP_CREDENTIALS: default-realm,root,s3cr3t
+      POLARIS_REALM_CONTEXT_REALMS: default-realm
+      POLARIS_PERSISTENCE_TYPE: in-memory
+
+      'POLARIS_FEATURES_"SUPPORTED_CATALOG_STORAGE_TYPES"': '["S3"]'
+
+      QUARKUS_PROFILE: dev
+
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "curl",
+          "-f",
+          "http://localhost:8182/q/health"
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+    depends_on:
+      - minio
+
+
+  # ============================================================
+  # Create Polaris catalog
+  # ============================================================
+  polaris-setup:
+    image: alpine/curl
+    container_name: polaris-setup
+
+    networks:
+      - iceberg_net
+
+    depends_on:
+      polaris:
+        condition: service_healthy
+
+    entrypoint: >
+      sh -c "
+      TOKEN=$$(curl -s -X POST
+      http://polaris:8181/api/catalog/v1/oauth/tokens
+      -d 'grant_type=client_credentials&client_id=root&client_secret=s3cr3t&scope=PRINCIPAL_ROLE:ALL'
+      | sed -E 's/.*access_token\":\"([^\"]+)\".*/\1/');
+
+      echo 'Creating Polaris catalog...';
+
+      curl -s -X POST
+      http://polaris:8182/api/management/v1/catalogs
+      -H \"Authorization: Bearer $$TOKEN\"
+      -H 'Content-Type: application/json'
+      -H 'Polaris-Realm: default-realm'
+      -d '{
+        \"catalog\": {
+          \"name\": \"warehouse\",
+          \"type\": \"INTERNAL\",
+          \"properties\": {
+            \"default-base-location\": \"s3://warehouse/\"
+          },
+          \"storageConfigInfo\": {
+            \"storageType\": \"S3\",
+            \"endpoint\": \"http://minio:9000\",
+            \"allowedLocations\": [
+              \"s3://warehouse/\"
+            ]
+          }
+        }
+      }';
+
+      echo 'Polaris setup completed';
+      "
+
+
+  # ============================================================
+  # MinIO
+  # ============================================================
+  minio:
+    image: quay.io/minio/minio
+    container_name: minio
+    hostname: minio
+
+    environment:
+      MINIO_ROOT_USER: admin
+      MINIO_ROOT_PASSWORD: dev@1234
+      MINIO_DOMAIN: minio
+
+    networks:
+      iceberg_net:
+        aliases:
+          - warehouse.minio
+
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+
+    command:
+      [
+        "server",
+        "/data",
+        "--console-address",
+        ":9001"
+      ]
+
+
+  # ============================================================
+  # MinIO client - create warehouse bucket
+  # ============================================================
+  mc:
+    image: minio/mc
+    container_name: mc
+
+    networks:
+      - iceberg_net
+
+    depends_on:
+      - minio
+
+    entrypoint: >
+      /bin/sh -c "
+      until /usr/bin/mc alias set
+      minio http://minio:9000 admin dev@1234;
+      do
+        echo 'Waiting for MinIO...';
+        sleep 2;
+      done;
+
+      /usr/bin/mc mb --ignore-existing minio/warehouse;
+
+      echo 'MinIO warehouse bucket ready';
+
+      tail -f /dev/null
+      "
+
+
+  # ============================================================
+  # Trino
+  # ============================================================
+  trino:
+    image: trinodb/trino:472
+    container_name: trino
+    hostname: trino
+
+    depends_on:
+      - polaris
+      - minio
+
+    networks:
+      - iceberg_net
+
+    ports:
+      - "8082:8080"
+
+    volumes:
+      - ./trino/etc:/etc/trino
+
+
+  # ============================================================
+  # Superset
+  # ============================================================
+  superset:
+    build:
+      context: .
+      dockerfile: superset.Dockerfile
+
+    container_name: superset
+
+    ports:
+      - "8088:8088"
+
+    networks:
+      - iceberg_net
+
+    volumes:
+      - superset_home:/app/superset_home
+
+    environment:
+      SUPERSET_SECRET_KEY: dev@1234
+
+    command: >
+      /bin/sh -c "
+      superset db upgrade &&
+      superset fab create-admin
+      --username admin
+      --firstname Admin
+      --lastname User
+      --email admin@example.com
+      --password admin &&
+      superset init &&
+      gunicorn
+      --bind 0.0.0.0:8088
+      'superset.app:create_app()'
+      "
+
+
+volumes:
+  superset_home:
+
+
+networks:
+  iceberg_net:
+    driver: bridge

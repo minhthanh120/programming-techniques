@@ -4,3 +4,5 @@ data/*
 spark-logs/*
 spark-4.0.0-bin-hadoop3-connect.tgz
 chk-point-dir/*
+/spark-4.0.4-bin-hadoop3-connect.tgz
+/spark-4.0.4-bin-hadoop3-connect
